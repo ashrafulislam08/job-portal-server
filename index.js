@@ -51,15 +51,82 @@ async function run() {
 
     // job application apis
 
-    app.post("/job-application/", async (req, res) => {
-      const application = req.body;
-      const result = await jobApplicationCollection.insertOne(application);
+    // get all data, get one data, get some data [o, 1, many]
+    app.get("/job-application", async (req, res) => {
+      const email = req.query.email;
+      const query = { applicant_email: email };
+      const result = await jobApplicationCollection.find(query).toArray();
+
+      // fokira way to aggregate data
+      for (const application of result) {
+        const query1 = { _id: new ObjectId(application.job_id) };
+        const job = await jobsCollection.findOne(query1);
+        if (job) {
+          application.title = job.title;
+          application.location = job.location;
+          application.company = job.company;
+          application.company_logo = job.company_logo;
+        }
+      }
       res.send(result);
     });
 
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    app.get("/job-applications/jobs/:job_id", async (req, res) => {
+      const jobId = req.params.job_id;
+      const query = { job_id: jobId };
+      const result = await jobApplicationCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.post("/job-applications/", async (req, res) => {
+      const application = req.body;
+      const result = await jobApplicationCollection.insertOne(application);
+
+      // not the best way (use aggregate)
+      // skip --> it
+
+      const id = application.job_id;
+      const query = { _id: new ObjectId(id) };
+      const job = await jobsCollection.findOne(query);
+      let newCount = 0;
+
+      if (job.applicationCount) {
+        newCount = job.applicationCount + 1;
+      } else {
+        newCount = 1;
+      }
+
+      // now update the job info
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          applicationCount: newCount,
+        },
+      };
+
+      const updateResult = await jobsCollection.updateOne(filter, updateDoc);
+
+      res.send(result);
+    });
+
+    app.patch("/job-application/:id", async (req, res) => {
+      const id = req.params.id;
+      const data = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          status: data.status,
+        },
+      };
+
+      const result = await jobApplicationCollection.updateOne(
+        filter,
+        updatedDoc
+      );
+      res.send(result);
+    });
+
+    console.log("You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
